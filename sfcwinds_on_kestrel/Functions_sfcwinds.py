@@ -16,11 +16,13 @@ def find_closest_HRRR_loc(hrrr, hrrr_coords_to_use):
     """
 
     # Observations use longitudes between -180 to 180, transform HRRR to that
-    hrrr['longitude'] = xr.where(hrrr['longitude'] > 180, hrrr['longitude'] - 360, hrrr['longitude'])
+    #hrrr['longitude'] = xr.where(hrrr['longitude'] > 180, hrrr['longitude'] - 360, hrrr['longitude'])
 
     # Find the shortest distance to the given lat/lon point
     dist = (hrrr['longitude'].values - hrrr_coords_to_use[1])**2 + (hrrr['latitude'].values - hrrr_coords_to_use[0])**2
-    
+    print(f"Coordinates extracted from HRRR file longitude {hrrr['longitude'].values} latitude {hrrr['latitude'].values} ")
+    print(f"Argument coordinates for find_cloest_HRRR_loc {hrrr_coords_to_use}")
+    print(f"Distance calculated within function {dist}")    
     # Get the index, lat and lon of the minimum distance
     idx = np.unravel_index(np.argmin(dist), dist.shape)
     closest_lat = hrrr.latitude.values[idx]

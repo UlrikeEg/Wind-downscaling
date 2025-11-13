@@ -99,7 +99,7 @@ if rank==0 :
             stations_found.append(station)
             y_closest.append(idx[0])
             x_closest.append(idx[1])
-            print(f"station {stations_found.iloc[-1]}, xc {x_closest.iloc[-1]}, yc {y_closest.iloc[-1]}")
+            print(f"station {stations_found[-1]}, xc {x_closest[-1]}, yc {y_closest[-1]}")
         
 
     # loop over all HRRR files and extract data for this location
