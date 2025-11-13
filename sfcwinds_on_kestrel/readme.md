@@ -1,6 +1,7 @@
 Scripts on Kestrel for the sfcwinds project
 
 Updates files on Github from Kestrel with:
+
 git add .
 git commit -m "Update message"
 git push

@@ -20,158 +20,19 @@ from sklearn.model_selection import KFold
 from sklearn.base import clone 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from sklearn.neural_network import MLPRegressor  # NN regressor option
-from sklearn.inspection import permutation_importance
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.preprocessing import StandardScaler
 
-from Functions_sfcwinds import *
-
-
-# Enable interactive backend when running in IPython, ignore in plain Python scripts
-try:
-    if callable(globals().get("get_ipython", None)):
-        get_ipython().run_line_magic("matplotlib", "widget")  # type: ignore[name-defined]
-except Exception:
-    pass
 
 
 """
 To do:
-- experiment with features
+- add more features (terrain std dev)
+- empty map
 - tune hyperparameters (grid search)
 - test other models
-- add scaling
+
 """
 
-
-
-
-"""TorchRegressor
-
-Lightweight PyTorch regression model with scikit‑learn style interface.
-Now subclasses nn.Module so it can be saved/loaded with standard PyTorch
-APIs and supports hooks. We also implement get_params / set_params so
-cross_val_score and clone() work without failing.
-
-Notes:
- - Inputs expected as (n_samples, n_features) numpy array / pandas frame.
- - predict returns 1D numpy array (n_samples,).
- - Early stopping based on validation MSE with patience.
-"""
-class TorchRegressor(nn.Module):
-    def __init__(self, hidden_sizes=(128, 64), lr=1e-3, batch_size=256,
-                 max_epochs=500, patience=25, random_state=0):
-        super().__init__()
-        torch.manual_seed(random_state)
-        # hyperparameters
-        self.hidden_sizes = hidden_sizes
-        self.lr = lr
-        self.batch_size = batch_size
-        self.max_epochs = max_epochs
-        self.patience = patience
-        self.random_state = random_state
-        # utilities
-        self.scaler = StandardScaler()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # will hold built network
-        self.model = None
-        self.best_state = None
-
-    # scikit-learn compatibility
-    def get_params(self, deep=True):  # clone() relies on this
-        return {
-            "hidden_sizes": self.hidden_sizes,
-            "lr": self.lr,
-            "batch_size": self.batch_size,
-            "max_epochs": self.max_epochs,
-            "patience": self.patience,
-            "random_state": self.random_state,
-        }
-
-    def set_params(self, **params):
-        for k, v in params.items():
-            setattr(self, k, v)
-        return self
-
-    def _build(self, in_features):
-        layers = []
-        prev = in_features
-        for h in self.hidden_sizes:
-            layers.append(nn.Linear(prev, h))
-            layers.append(nn.ReLU())
-            prev = h
-        layers.append(nn.Linear(prev, 1))
-        self.model = nn.Sequential(*layers).to(self.device)
-
-    def forward(self, x):  # enables hooks & scripted export if needed
-        return self.model(x)
-
-    def fit(self, X, y):
-        X = np.asarray(X, dtype=np.float32)
-        y = np.asarray(y, dtype=np.float32).reshape(-1, 1)
-        X = self.scaler.fit_transform(X).astype(np.float32)
-
-        self._build(X.shape[1])
-        ds = TensorDataset(torch.from_numpy(X), torch.from_numpy(y))
-        n = len(ds)
-        n_val = max(1, int(0.1 * n))
-        n_train = n - n_val
-        train_ds, val_ds = torch.utils.data.random_split(
-            ds, [n_train, n_val],
-            generator=torch.Generator().manual_seed(self.random_state)
-        )
-        dl_train = DataLoader(train_ds, batch_size=self.batch_size, shuffle=True)
-        dl_val = DataLoader(val_ds, batch_size=self.batch_size, shuffle=False)
-
-        opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        loss_fn = nn.MSELoss()
-        best_val = np.inf
-        no_improve = 0
-
-        for epoch in range(self.max_epochs):
-            self.model.train()
-            for xb, yb in dl_train:
-                xb = xb.to(self.device); yb = yb.to(self.device)
-                pred = self.model(xb)
-                loss = loss_fn(pred, yb)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-            # validation
-            self.model.eval()
-            with torch.no_grad():
-                v_losses = []
-                for xb, yb in dl_val:
-                    xb = xb.to(self.device); yb = yb.to(self.device)
-                    pred = self.model(xb)
-                    v_losses.append(loss_fn(pred, yb).item())
-            v_loss = np.mean(v_losses)
-            if v_loss < best_val - 1e-5:
-                best_val = v_loss
-                no_improve = 0
-                self.best_state = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
-            else:
-                no_improve += 1
-                if no_improve >= self.patience:
-                    break
-
-        if self.best_state is not None:
-            self.model.load_state_dict(self.best_state)
-
-        return self  # scikit-learn convention
-
-    def predict(self, X):
-        X = np.asarray(X, dtype=np.float32)
-        Xs = self.scaler.transform(X).astype(np.float32)
-        self.model.eval()
-        with torch.no_grad():
-            preds = self.model(torch.from_numpy(Xs).to(self.device)).cpu().numpy().ravel()
-        return preds
-
-
+from Functions_sfcwinds import *
 
 def quantile_mapping(model_series, model_cdf, obs_cdf, quantiles):
     # Find the quantile of each model value in the model CDF
@@ -181,6 +42,12 @@ def quantile_mapping(model_series, model_cdf, obs_cdf, quantiles):
     return corrected_series
 
 
+# Enable interactive backend when running in IPython, ignore in plain Python scripts
+try:
+    if callable(globals().get("get_ipython", None)):
+        get_ipython().run_line_magic("matplotlib", "widget")  # type: ignore[name-defined]
+except Exception:
+    pass
 
 
 
@@ -293,7 +160,6 @@ std_elev = ds['elevation_std'].values
 lat = ds['lat'].values
 lon = ds['lon'].values
 ds.close()
-
 
 
 #%% Test for one station
@@ -699,31 +565,10 @@ df = pd.DataFrame(all_records)
 X = df.drop(columns=["station_id", "obs_q"])
 y = df["obs_q"]
 
-# Model selector: set to "rf" or "nn"
-MODEL_TYPE = "nn"
-print(f"Selected model type: {MODEL_TYPE}")
-
-if MODEL_TYPE == "rf":
-    ml_model = RandomForestRegressor(
-        n_estimators=200,
-        random_state=0,
-        n_jobs=-1
-    )
-elif MODEL_TYPE == "nn":
-    ml_model = TorchRegressor(
-        hidden_sizes=(128, 64),
-        lr=1e-3,
-        batch_size=256,
-        max_epochs=500,
-        patience=25,
-        random_state=0
-    )
-else:
-    raise ValueError("MODEL_TYPE must be 'rf' or 'nn'.")
-
+ml_model = RandomForestRegressor(n_estimators=200, random_state=0)
 ml_model.fit(X, y)
 
-# --- Model evaluation & feature importance / permutation ---
+# --- Model evaluation & feature importance ---
 try:
     # In-sample performance
     y_pred_train = ml_model.predict(X)
@@ -751,60 +596,39 @@ try:
     print(f"{K}-fold CV RMSE: {cv_rmse_mean:.3f} (+/- {cv_rmse_std:.3f})")
     print(f"{K}-fold CV Bias: {cv_bias_mean:.3f} (+/- {cv_bias_std:.3f})")
 
-    # Columns to keep (exclude quantile & model_q)
+
+    # Feature importance (exclude 'quantile' and 'model_q')
+    importances = ml_model.feature_importances_
     keep_cols = [c for c in X.columns if c not in ("quantile", "model_q")]
+
     keep_idx = [i for i, c in enumerate(X.columns) if c in keep_cols]
+    importances_keep = importances[keep_idx]
+    order = np.argsort(importances_keep)
 
-    # Gini importance only for RF
-    if isinstance(ml_model, RandomForestRegressor):
-        importances = ml_model.feature_importances_
-        importances_keep = importances[keep_idx]
-        order = np.argsort(importances_keep)
-        plt.figure(figsize=(5, 0.35*len(keep_cols)+1))
-        plt.barh(np.array(keep_cols)[order], importances_keep[order], color="teal")
-        plt.xlabel("Gini Importance")
-        plt.title("Feature Importance (RF)")
-        plt.tight_layout()
-        plt.show()
-    else:
-        print("Skipping Gini feature importance (not available for PyTorch NN).")
+    plt.figure(figsize=(5, 0.35*len(keep_cols)+1))
+    plt.barh(np.array(keep_cols)[order], importances_keep[order], color="teal")
+    plt.xlabel("Gini Importance")
+    plt.title("Feature Importance")
+    plt.tight_layout()
+    plt.show()
 
-    # Permutation importance (works for both)
-    if isinstance(ml_model, RandomForestRegressor):
-        perm = permutation_importance(ml_model, X, y, n_repeats=8, random_state=0, n_jobs=-1)
-    else:
-        # Manual permutation importance for TorchRegressor
-        base_preds = ml_model.predict(X)
-        base_rmse = np.sqrt(np.mean((base_preds - y.values)**2))
-        perm_means = []
-        perm_stds = []
-        for col_i in range(X.shape[1]):
-            if X.columns[col_i] in ("quantile", "model_q"):
-                continue
-            imp_scores = []
-            X_copy = X.copy()
-            for _ in range(8):
-                shuffled = X_copy.iloc[:, col_i].sample(frac=1.0, replace=False, random_state=None).values
-                X_copy.iloc[:, col_i] = shuffled
-                preds_shuf = ml_model.predict(X_copy)
-                rmse_shuf = np.sqrt(np.mean((preds_shuf - y.values)**2))
-                imp_scores.append(rmse_shuf - base_rmse)
-                X_copy.iloc[:, col_i] = X.iloc[:, col_i]  # restore
-            perm_means.append(np.mean(imp_scores))
-            perm_stds.append(np.std(imp_scores))
-        perm_mean_keep = np.array(perm_means)
-        perm_std_keep = np.array(perm_stds)
-        keep_cols = [c for c in X.columns if c not in ("quantile", "model_q")]
-        order_p = np.argsort(perm_mean_keep)
-        plt.figure(figsize=(5, 0.35*len(keep_cols)+1))
-        plt.barh(np.array(keep_cols)[order_p],
-                 perm_mean_keep[order_p],
-                 xerr=perm_std_keep[order_p],
-                 color="darkorange", alpha=0.85)
-        plt.xlabel("Permutation Importance (Δ RMSE)")
-        plt.title(f"Permutation Importance ({MODEL_TYPE})")
-        plt.tight_layout()
-        plt.show()
+    # Optional permutation importance on kept cols (exclude quantile, model_q correctly)
+    from sklearn.inspection import permutation_importance
+    # Compute over full X (estimator expects same columns), then filter
+    perm = permutation_importance(ml_model, X, y, n_repeats=8, random_state=0, n_jobs=-1)
+    perm_mean_keep = perm.importances_mean[keep_idx]
+    perm_std_keep = perm.importances_std[keep_idx]
+    order_p = np.argsort(perm_mean_keep)
+
+    plt.figure(figsize=(5, 0.35*len(keep_cols)+1))
+    plt.barh(np.array(keep_cols)[order_p],
+             perm_mean_keep[order_p],
+             xerr=perm_std_keep[order_p],
+             color="darkorange", alpha=0.85)
+    plt.xlabel("Permutation Importance (Δ score)")
+    plt.title("Permutation Importance")
+    plt.tight_layout()
+    plt.show()
 
     """
     Gini vs. permutation:
@@ -826,6 +650,7 @@ try:
 
 except Exception as e:
     print(f"Model evaluation / feature importance failed: {e}")
+
 
 
 # -------------------------------
