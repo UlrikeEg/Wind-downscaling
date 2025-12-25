@@ -16,13 +16,13 @@ def find_closest_HRRR_loc(hrrr, hrrr_coords_to_use):
     """
 
     # Observations use longitudes between -180 to 180, transform HRRR to that
-    #hrrr['longitude'] = xr.where(hrrr['longitude'] > 180, hrrr['longitude'] - 360, hrrr['longitude'])
+    hrrr['longitude'] = xr.where(hrrr['longitude'] > 180, hrrr['longitude'] - 360, hrrr['longitude'])
 
     # Find the shortest distance to the given lat/lon point
     dist = (hrrr['longitude'].values - hrrr_coords_to_use[1])**2 + (hrrr['latitude'].values - hrrr_coords_to_use[0])**2
-    print(f"Coordinates extracted from HRRR file longitude {hrrr['longitude'].values} latitude {hrrr['latitude'].values} ")
-    print(f"Argument coordinates for find_cloest_HRRR_loc {hrrr_coords_to_use}")
-    print(f"Distance calculated within function {dist}")    
+    #print(f"Coordinates extracted from HRRR file longitude {hrrr['longitude'].values} latitude {hrrr['latitude'].values} ")
+    #print(f"Argument coordinates for find_cloest_HRRR_loc {hrrr_coords_to_use}")
+    #print(f"Distance calculated within function {dist}")    
     # Get the index, lat and lon of the minimum distance
     idx = np.unravel_index(np.argmin(dist), dist.shape)
     closest_lat = hrrr.latitude.values[idx]
@@ -140,3 +140,28 @@ def rotate_to_true_north(u10, v10, lon):
     vn10 = -sinx2 * u10 + cosx2 * v10
 
     return un10, vn10
+
+
+
+def standardize_wspd_height(wspd_obs, obs_height, target_height=3.0, z0=0.03):
+    """
+    Standardize wind speed to a target height using the logarithmic wind profile.
+
+    Parameters:
+    - df: pandas DataFrame with 'windspeed' column
+    - obs_height: observed height of wind speed measurement (in meters)
+    - target_height: desired height to standardize to (default: 3.0 meters)
+    - z0: surface roughness length (default: 0.03 meters)
+
+    Returns:
+    - wspd_target: numpy array or pandas Series of wind speeds standardized to the target height
+
+    Use:
+    df['windspeed_3m'] = standardize_wspd_height(df['windspeed'], df['height'], target_height=3.0, z0=df['z0'])
+
+    """
+    # Apply logarithmic wind profile formula
+    wspd_target = wspd_obs * (np.log(target_height/z0)) / (np.log(obs_height/z0))
+
+    return wspd_target
+

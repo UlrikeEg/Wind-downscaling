@@ -53,7 +53,7 @@ G3P3 = (-106.510100,  34.962400, "G3P3")
 
 # date range with one-day frequency
 date_range = pd.date_range(datetime(2025, 3, 21), 
-                           datetime.now(), 
+                           datetime.now(), # datetime(2025, 11, 18), # 
                            freq="h").tolist()[::-1]   # list starts from end
 
 # # Get time ranges from obs file
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     # loop over days in date_range
     for date in date_range[:]: 
             
-            print(date)
+            print(date, flush=True)
             
             hourly_file_path = os.path.join(save_folder, f"hrrr_{G3P3[2]}_{date.date()}_{date.hour:02d}h.nc")
             
@@ -211,7 +211,7 @@ if __name__ == "__main__":
                     }
                 hrrr.to_netcdf(hourly_file_path) # '../data/HRRR\\hrrr_test.nc'
 
-                print ("Saved hourly file.")
+                print ("Saved hourly file.", flush=True)
         
 
         
